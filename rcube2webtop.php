@@ -1,7 +1,7 @@
 #!/usr/bin/php
 <?php
 
-# controllo utente e dominio
+# check user and domain
 if ($argc < 3) {
     echo "ERROR: PLEASE PROVIDE CORRECT USER AND DOMAIN\n";
     die();
@@ -10,7 +10,7 @@ if ($argc < 3) {
 $user   = $argv[1];
 $domain = $argv[2];
 
-# se tutti gli utenti mi connetto a roundcube: l'utente deve recuperare la password da /etc/roundcubemail/config.inc.php e sostituirla qui sotto
+# if $user = all sysadmin have to get roundcube password from /etc/rouncubemail/config.inc.php e replace $roundcubepass variable below
 $roundcubepass = "yourroundcubepassword";
 
 if ($user != "all") {
@@ -25,7 +25,7 @@ if ($user != "all") {
     $queryall = "SELECT username FROM users;";
     $result   = $rconnect->query($queryall);
     
-    # chiamo la funzione di importazione solo se utente non contiene * (impersonating) e non contiene la @ (accesso con dominio). è bene aver effettuato l'accesso almeno una volta solo con utente in roundcube e aver abilitato l'account su webtop
+    # call import function only if username not contains * (impersonating) or @ (login with domain). It's necessary to access at least one time with the only username in roundcube and have been enabled users into Webtop
     if ($result->num_rows > 0) {
         while ($row = $result->fetch_array(MYSQLI_NUM)) {
             if (strpos(trim($row[0]), "*") === FALSE && strpos(trim($row[0]), "@") === FALSE && trim($row[0]) != "root")
@@ -37,18 +37,18 @@ if ($user != "all") {
 function import_filter($user_id, $domain_name)
 {
     
-    # compongo username completa
+    # make complete username
     $complete_user = $user_id . "@" . $domain_name;
     
-    # recupero filtri roundcube
+    # get roundcube filters
     $file = file_get_contents("/var/lib/nethserver/vmail/$complete_user/sieve/roundcube.sieve");
     
-    echo "\n***** UTENTE: $user_id *****\n";
+    echo "\n***** START USER: $user_id *****\n";
     
-    # se il file è vuoto o non esiste skippo l'utente
+    # if empty file or doesn't exist: skip user
     if ($file === false || trim($file) == "/* empty script */") {
         echo "\nRESULT: EMPTY FILE";
-        echo "\n\n***** FINE UTENTE: $user_id *****\n\n\n\n";
+        echo "\n\n***** END USER: $user_id *****\n\n\n\n";
         return 0;
     }
     
@@ -58,17 +58,17 @@ function import_filter($user_id, $domain_name)
     $filters = Array();
     $filters = explode("# r", $file);
     
-    # imposto domain id
+    # set domain id
     $domain_id = "NethServer";
     $neworder  = 1;
     
-    # eseguo connessione a db webtop
+    # connect to webtop database
     exec('perl -e \'use NethServer::Password; my $password = NethServer::Password::store("webtop5") ; printf $password;\'', $out2);
     $dpass2 = $out2[0];
     
     $webtop_db = pg_connect("host=localhost port=5432 dbname=webtop5 user=sonicle password=$dpass2");
     
-    # leggo i filtri
+    # read filters from file
     for ($i = 0; $i < count($filters); $i++) {
         if (strpos($filters[$i], 'require') === false && trim($filters[$i]) != "") {
             
@@ -82,16 +82,16 @@ function import_filter($user_id, $domain_name)
             $string_action  = "";
             $error          = false;
             
-            echo "\n\n######## FILTRO $i #########\n\n";
+            echo "\n\n######## START FILTER: $i #########\n\n";
             
             $rowf = explode("\n", $filters[$i]);
             for ($j = 0; $j < count($rowf) && !$error; $j++) {
                 $detail = $rowf[$j];
-                # recupero nome filtro
+                # get filter name
                 if (strpos($detail, 'ule:') !== false) {
                     $filtername = substr(trim($detail), 5, (strlen(trim($detail)) - 6));
-                    echo "nome filtro: " . $filtername . "\n";
-                    # recupero quando applicare la regola
+                    echo "filter name: " . $filtername . "\n";
+                    # get when apply rule
                 } else if (strpos($detail, 'if') !== false) {
                     $rulestring = substr(trim($detail), 3);
                     
@@ -100,7 +100,7 @@ function import_filter($user_id, $domain_name)
                     else
                         $enabled = "t";
                     
-                    echo "abilitato: " . $enabled . "\n";
+                    echo "enabled: " . $enabled . "\n";
                     
                     $rule = substr($rulestring, strpos($rulestring, "#"));
                     
@@ -116,7 +116,7 @@ function import_filter($user_id, $domain_name)
                     
                     echo "match: " . $sieve_match . "\n";
                     
-                    # se diverso da sempre compongo la stringa delle regole
+                    # if $rule != "true" (always) make rules condition string
                     if ($rule != "true") {
                         
                         $rule      = str_replace(", \"", ",\"", $rule);
@@ -178,7 +178,7 @@ function import_filter($user_id, $domain_name)
                     echo "rules: " . $sieve_rules . "\n";
                     
                     
-                    # recupero le azioni da compiere
+                    # get actions
                 } else if (strpos($detail, '{') !== false) {
                     $string_action = "[";
                 } else if (strpos($detail, '{') === false && strpos($detail, '}') === false && $detail != "") {
@@ -186,7 +186,7 @@ function import_filter($user_id, $domain_name)
                     $actionline = explode(" \"", $detail);
                     $method     = trim($actionline[0]);
                     
-                    # caso particolare coi flag e contrassegni
+                    # particular case: flags
                     if (strpos($method, "addflag") !== false) {
                         $arguments = explode(" [\"", $detail);
                         
@@ -208,17 +208,17 @@ function import_filter($user_id, $domain_name)
                             $string_action .= "{\"method\":\"" . rcube2webtop($method) . "\",\"argument\":\"" . rcube2webtop($argument) . "\"},";
                         }
                         
-                        # caso particolare rispondi con testo
+                        # particular case: answer with text
                     } else if (strpos($method, "vacation") !== false) {
                         echo "\n\n---- ERROR: ANSWER WITH TEXT NOT SUPPORTED ----\n\n";
                         $error = true;
-                        # caso classico
+                        # classic case
                     } else {
                         $argument = trim(substr($actionline[1], 0, (strlen($actionline[1]) - 2)));
                         $string_action .= "{\"method\":\"" . rcube2webtop($method) . "\",\"argument\":\"" . $argument . "\"},";
                     }
                     
-                    # completo la stringa delle azioni
+                    # complete actions string
                 } else if (strpos($detail, '}') !== false) {
                     $sieve_actions = substr($string_action, 0, (strlen($string_action) - 1)) . "]";
                     echo "actions: " . $sieve_actions . "\n";
@@ -228,7 +228,7 @@ function import_filter($user_id, $domain_name)
                 
             }
             
-            # se c'è stato un errore (ad esempio si tratta di un rispondi con messaggio) non completo la query
+            # if there was an error do not complete the query
             if (!$error) {
                 $order     = 0;
                 $query_ord = "SELECT max(\"order\") FROM mail.in_filters WHERE user_id = '$user_id';";
@@ -255,19 +255,19 @@ function import_filter($user_id, $domain_name)
                 $neworder++;
             }
             
-            echo "\n######## FINE FILTRO $i #########\n\n\n";
+            echo "\n######## END FILTER: $i #########\n\n\n";
             
         }
     }
     
-    echo "\n\n***** FINE UTENTE: $user_id *****\n\n\n\n";
+    echo "\n\n***** END USER: $user_id *****\n\n\n\n";
     
 }
 
-# messaggio di conversione completata: l'utente ora deve aprire la propria pagina, impostare come gestore principale dei filtri webtop e procedere con un Salva e Chiudi che scrive il file dei filtri sieve
+# conversion ended: users now need to open webtop, set webtop5 as default filters manager and proceed with "Save and Close" that write sieve filters file
 echo "\n\n ***** CONVERSION ENDED: CHECK ERRORS AND THEN APPLY CHANGES IN WEBTOP USER PAGE ***** \n\n";
 
-# conversione nomi da roundcube a webtop
+# name conversion from roundcube to webtop
 function rcube2webtop($word)
 {
 	
@@ -280,7 +280,7 @@ function rcube2webtop($word)
 		case "exists": return "contains";
 		case "notexists": return "notcontains";
 		
-		/* nomi non completamente compatibili: necessitano una verifica */
+		/* names not completely compatibiles: needs to be verified */
 		case "matches": return "matches";
 		case "notmatches": return "notmatches";
 		case "regex": return "matches";
@@ -310,13 +310,13 @@ function rcube2webtop($word)
 		case "redirect": return "redirect";
 		case "redirect :copy": return "redirect";
 		case "reject": return "reject";
-		case "vacation": return "keep";  /* non c'è rispondi con messaggio */
+		case "vacation": return "keep";  /* there isn't answer with text */
 		case "discard": return "discard";
 		case "setflag": return "addflag";
 		case "addflag": return "addflag";
-		case "removeflag": return "keep"; /* non c'è rimuovi flag */
-		case "set": return "keep"; /* non c'è imposta variabile */
-		case "notify": return "redirect"; /* non c'è invia notifica: inoltro copia */
+		case "removeflag": return "keep"; /* there isn't removeflag */
+		case "set": return "keep"; /* there isn't set variable */
+		case "notify": return "redirect"; /* there isn't send notification: i use forward a copy */
 		case "keep": return "keep";
 		case "stop": return "stop";
 		
