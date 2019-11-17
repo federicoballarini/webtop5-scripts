@@ -1,9 +1,12 @@
 #!/usr/bin/php
 <?php
 
+$logfile = "/var/log/rcube2webtop.log";
+$GLOBALS['log'] = fopen($logfile,'a');
+
 # check user and domain
 if ($argc < 3) {
-    echo "ERROR: PLEASE PROVIDE CORRECT USER AND DOMAIN\n";
+    fwrite($GLOBALS['log'],date("Y-m-d H:i:s")."\tERROR: PLEASE PROVIDE CORRECT USER AND DOMAIN\n");
     die();
 }
 
@@ -15,15 +18,18 @@ $roundcubepass = "yourroundcubepassword";
 
 if ($user != "all") {
     import_filter($user, $domain);
+    echo "Starting import...";
 } else {
     $rconnect = mysqli_connect("localhost", "roundcubemail", "$roundcubepass", "roundcubemail");
     if (!$rconnect) {
-        echo "ROUNDCUBE DB CONNECTION ERROR\n";
+       	fwrite($GLOBALS['log'],date("Y-m-d H:i:s")."\tERROR: ROUNDCUBE DB CONNECTION ERROR\n");
         die();
     }
     
     $queryall = "SELECT username FROM users;";
     $result   = $rconnect->query($queryall);
+    
+    echo "Starting import...";
     
     # call import function only if username not contains * (impersonating) or @ (login with domain). It's necessary to access at least one time with the only username in roundcube and have been enabled users into Webtop
     if ($result->num_rows > 0) {
@@ -43,12 +49,12 @@ function import_filter($user_id, $domain_name)
     # get roundcube filters
     $file = file_get_contents("/var/lib/nethserver/vmail/$complete_user/sieve/roundcube.sieve");
     
-    echo "\n***** START USER: $user_id *****\n";
+    fwrite($GLOBALS['log'],date("Y-m-d H:i:s")."\t***** START USER: $user_id *****\n");
     
     # if empty file or doesn't exist: skip user
     if ($file === false || trim($file) == "/* empty script */") {
-        echo "\nRESULT: EMPTY FILE";
-        echo "\n\n***** END USER: $user_id *****\n\n\n\n";
+        fwrite($GLOBALS['log'],date("Y-m-d H:i:s")."\tRESULT: EMPTY FILE\n");
+        fwrite($GLOBALS['log'],date("Y-m-d H:i:s")."\t***** END USER: $user_id *****\n");
         return 0;
     }
     
@@ -82,7 +88,7 @@ function import_filter($user_id, $domain_name)
             $string_action  = "";
             $error          = false;
             
-            echo "\n\n######## START FILTER: $i #########\n\n";
+            fwrite($GLOBALS['log'],date("Y-m-d H:i:s")."\t######## START FILTER: $i #########\n");
             
             $rowf = explode("\n", $filters[$i]);
             for ($j = 0; $j < count($rowf) && !$error; $j++) {
@@ -90,7 +96,7 @@ function import_filter($user_id, $domain_name)
                 # get filter name
                 if (strpos($detail, 'ule:') !== false) {
                     $filtername = substr(trim($detail), 5, (strlen(trim($detail)) - 6));
-                    echo "filter name: " . $filtername . "\n";
+                     fwrite($GLOBALS['log'],date("Y-m-d H:i:s")."\tFilter name: " . $filtername . "\n");
                     # get when apply rule
                 } else if (strpos($detail, 'if') !== false) {
                     $rulestring = substr(trim($detail), 3);
@@ -100,7 +106,7 @@ function import_filter($user_id, $domain_name)
                     else
                         $enabled = "t";
                     
-                    echo "enabled: " . $enabled . "\n";
+                    fwrite($GLOBALS['log'],date("Y-m-d H:i:s")."\tEnabled: " . $enabled . "\n");
                     
                     $rule = substr($rulestring, strpos($rulestring, "#"));
                     
@@ -114,7 +120,7 @@ function import_filter($user_id, $domain_name)
                     else
                         $sieve_match = "any";
                     
-                    echo "match: " . $sieve_match . "\n";
+                    fwrite($GLOBALS['log'],date("Y-m-d H:i:s")."\tMatch: " . $sieve_match . "\n");
                     
                     # if $rule != "true" (always) make rules condition string
                     if ($rule != "true") {
@@ -164,7 +170,7 @@ function import_filter($user_id, $domain_name)
                                 $argument = trim($fields[0]);
                                 $value    = trim($int_fields[5]);
                             } else
-                                echo "***** NOT IMPLEMENTED *****";
+                                fwrite($GLOBALS['log'],date("Y-m-d H:i:s")."\t***** NOT IMPLEMENTED *****");
                             
                             $string_filters .= "{\"field\":\"" . rcube2webtop($field) . "\",\"argument\":\"" . rcube2webtop($argument) . "\",\"operator\":\"" . rcube2webtop($operator) . "\",\"value\":\"" . rcube2webtop($value) . "\"},";
                         }
@@ -175,7 +181,7 @@ function import_filter($user_id, $domain_name)
                     
                     $sieve_rules = "[" . substr($string_filters, 0, (strlen($string_filters) - 1)) . "]";
                     
-                    echo "rules: " . $sieve_rules . "\n";
+                    fwrite($GLOBALS['log'],date("Y-m-d H:i:s")."\tRules: " . $sieve_rules . "\n");
                     
                     
                     # get actions
@@ -210,7 +216,7 @@ function import_filter($user_id, $domain_name)
                         
                         # particular case: answer with text
                     } else if (strpos($method, "vacation") !== false) {
-                        echo "\n\n---- ERROR: ANSWER WITH TEXT NOT SUPPORTED ----\n\n";
+                        fwrite($GLOBALS['log'],date("Y-m-d H:i:s")."\t---- ERROR: ANSWER WITH TEXT NOT SUPPORTED ----\n");
                         $error = true;
                         # classic case
                     } else {
@@ -221,7 +227,7 @@ function import_filter($user_id, $domain_name)
                     # complete actions string
                 } else if (strpos($detail, '}') !== false) {
                     $sieve_actions = substr($string_action, 0, (strlen($string_action) - 1)) . "]";
-                    echo "actions: " . $sieve_actions . "\n";
+					fwrite($GLOBALS['log'],date("Y-m-d H:i:s")."\tActions: " . $sieve_actions . "\n");
                 }
                 
                 
@@ -245,27 +251,32 @@ function import_filter($user_id, $domain_name)
                 $query  = "INSERT INTO mail.in_filters (domain_id,user_id,enabled,\"order\",name,sieve_match,sieve_rules,sieve_actions) VALUES ('$domain_id','$user_id','$enabled','$neworder','$filtername','$sieve_match','$sieve_rules','$sieve_actions');";
                 $result = pg_query($webtop_db, $query);
                 
-                echo "\n\nQUERY: " . $query . "\n";
+                fwrite($GLOBALS['log'],date("Y-m-d H:i:s")."\tQUERY: " . $query . "\n");
                 
                 if ($result === FALSE) {
-                    echo "\n\nRESULT: ERROR\n\n";
+                     fwrite($GLOBALS['log'],date("Y-m-d H:i:s")."\tRESULT: ERROR\n");
                 } else {
-                    echo "\n\nRESULT: OK\n\n";
+                     fwrite($GLOBALS['log'],date("Y-m-d H:i:s")."\tRESULT: OK\n");
                 }
                 $neworder++;
             }
             
-            echo "\n######## END FILTER: $i #########\n\n\n";
+             fwrite($GLOBALS['log'],date("Y-m-d H:i:s")."\t######## END FILTER: $i #########\n");
             
         }
     }
     
-    echo "\n\n***** END USER: $user_id *****\n\n\n\n";
+     fwrite($GLOBALS['log'],date("Y-m-d H:i:s")."\t***** END USER: $user_id *****\n");
     
 }
 
 # conversion ended: users now need to open webtop, set webtop5 as default filters manager and proceed with "Save and Close" that write sieve filters file
-echo "\n\n ***** CONVERSION ENDED: CHECK ERRORS AND THEN APPLY CHANGES IN WEBTOP USER PAGE ***** \n\n";
+fwrite($GLOBALS['log'],date("Y-m-d H:i:s")."\t***** CONVERSION ENDED: CHECK ERRORS AND THEN APPLY CHANGES IN WEBTOP USER PAGE *****\n");
+
+# auto show log file
+echo "\n\n".file_get_contents($logfile);
+
+echo "\nImport ended: check log file for errors: you can read it also under $logfile\n";
 
 # name conversion from roundcube to webtop
 function rcube2webtop($word)
